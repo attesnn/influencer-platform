@@ -15,6 +15,8 @@ enum UserRole {
 
 enum Platform {
   youtube
+  instagram
+  tiktok
 }
 
 enum OfferStatus {
@@ -32,6 +34,8 @@ model User {
   updatedAt         DateTime           @updatedAt
   socialAccounts    SocialAccount[]
   metrics           InfluencerMetric[]
+  platformMetrics   PlatformMetric[]
+  audienceSnapshots AudienceSnapshot[]
   campaigns         Campaign[]
   campaignMatches   CampaignMatch[]
   offersSent        Offer[]            @relation("offers_sent")
@@ -63,6 +67,36 @@ model InfluencerMetric {
   retentionProxy   Float?
   createdAt        DateTime @default(now())
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, snapshotDate])
+}
+
+model PlatformMetric {
+  id             String   @id @default(cuid())
+  userId         String
+  platform       Platform
+  snapshotDate   DateTime
+  reachOrganic   Int
+  reachPaid      Int
+  engagementRate Float
+  retentionRate  Float
+  followers      Int
+  payloadJson    Json
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform, snapshotDate])
+  @@index([userId, platform, snapshotDate])
+}
+
+model AudienceSnapshot {
+  id           String   @id @default(cuid())
+  userId       String
+  snapshotDate DateTime @default(now())
+  ageSplitJson Json
+  geographyJson Json
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, snapshotDate])
 }

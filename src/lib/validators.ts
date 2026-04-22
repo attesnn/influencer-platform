@@ -1,9 +1,5 @@
 import { z } from "zod";
 
-export const roleSchema = z.object({
-  role: z.enum(["influencer", "agency"]),
-});
-
 export const campaignSchema = z.object({
   name: z.string().min(2),
   budgetRange: z.string().min(2),

@@ -1,9 +1,5 @@
 # API Contracts (V1)
 
-## User / Role
-- `POST /api/user/role`
-  - Body: `{ role: "influencer" | "agency" }`
-
 ## YouTube
 - `GET /api/youtube/connect`
   - Starts OAuth flow.

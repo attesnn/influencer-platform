@@ -1,16 +1,17 @@
 # Product Scope (V1)
 
 ## Users
-- Influencers: connect YouTube and share baseline channel metrics.
-- Agencies: create campaigns, view matches, send offer requests.
+- Influencers: sign in via social providers and build a unified creator profile.
+- Agencies: separate login and portal planned as a later phase.
 
 ## V1 Outcomes
-- Secure auth and role-based access.
-- YouTube OAuth connect + snapshot ingestion.
-- Campaign creation and transparent match score.
-- Offer request workflow (send + respond).
+- Secure social-first influencer auth UX on the landing page.
+- Post-login influencer onboarding focused on connecting platforms.
+- YouTube OAuth connect + snapshot ingestion (active integration).
+- Clear UI path for linking additional accounts (Meta and TikTok placeholders).
 
 ## Out of Scope (V1)
-- TikTok and Meta integrations.
+- Functional Meta and TikTok OAuth integrations.
+- Agency-specific login flow and dedicated agency portal rollout.
 - Complex analytics dashboards.
 - Contracting/payment rails.
