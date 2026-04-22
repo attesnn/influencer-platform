@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  influencer
+  agency
+  admin
+}
+
+enum Platform {
+  youtube
+}
+
+enum OfferStatus {
+  pending
+  accepted
+  rejected
+}
+
+model User {
+  id                String             @id @default(cuid())
+  clerkUserId       String             @unique
+  email             String             @unique
+  role              UserRole
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  socialAccounts    SocialAccount[]
+  metrics           InfluencerMetric[]
+  campaigns         Campaign[]
+  campaignMatches   CampaignMatch[]
+  offersSent        Offer[]            @relation("offers_sent")
+  offersReceived    Offer[]            @relation("offers_received")
+  auditEvents       AuditEvent[]
+}
+
+model SocialAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  platform    Platform
+  oauthStatus String
+  channelId   String?
+  tokenRef    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform])
+}
+
+model InfluencerMetric {
+  id               String   @id @default(cuid())
+  userId           String
+  snapshotDate     DateTime @default(now())
+  subscribers      Int
+  views30d         Int
+  avgViewDuration  Float?
+  retentionProxy   Float?
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, snapshotDate])
+}
+
+model Campaign {
+  id               String            @id @default(cuid())
+  agencyUserId     String
+  name             String
+  budgetRange      String
+  targetGeo        String
+  targetNiche      String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  agencyUser       User              @relation(fields: [agencyUserId], references: [id], onDelete: Cascade)
+  criteria         CampaignCriteria?
+  matches          CampaignMatch[]
+  offers           Offer[]
+}
+
+model CampaignCriteria {
+  id               String   @id @default(cuid())
+  campaignId       String   @unique
+  minSubscribers   Int?
+  minViews30d      Int?
+  preferredNiche   String?
+  preferredGeo     String?
+  campaign         Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model CampaignMatch {
+  id                 String   @id @default(cuid())
+  campaignId         String
+  influencerUserId   String
+  score              Float
+  scoreBreakdownJson Json
+  createdAt          DateTime @default(now())
+  campaign           Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  influencerUser     User     @relation(fields: [influencerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, influencerUserId])
+}
+
+model Offer {
+  id               String      @id @default(cuid())
+  campaignId       String
+  agencyUserId     String
+  influencerUserId String
+  message          String
+  proposedValue    Int
+  status           OfferStatus @default(pending)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  campaign         Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  agencyUser       User        @relation("offers_sent", fields: [agencyUserId], references: [id], onDelete: Cascade)
+  influencerUser   User        @relation("offers_received", fields: [influencerUserId], references: [id], onDelete: Cascade)
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  actorUserId String
+  action      String
+  entityType  String
+  entityId    String
+  createdAt   DateTime @default(now())
+  actorUser   User     @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+}
