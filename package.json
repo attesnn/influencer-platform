@@ -2,6 +2,9 @@
   "name": "influencer-platform",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -9,13 +12,15 @@
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "auth:backfill": "node scripts/backfill-supabase-auth-ids.mjs"
   },
   "dependencies": {
-    "@clerk/nextjs": "^5.3.4",
     "@prisma/client": "^5.22.0",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.49.8",
     "googleapis": "^144.0.0",
-    "next": "14.2.25",
+    "next": "^16.2.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "zod": "^3.24.1"
@@ -26,7 +31,7 @@
     "@types/react-dom": "^18",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.25",
+    "eslint-config-next": "14.2.35",
     "postcss": "^8.4.49",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.17",

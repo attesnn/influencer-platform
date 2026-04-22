@@ -1,13 +1,10 @@
-import { auth } from "@clerk/nextjs/server";
 import { buildYoutubeAuthUrl } from "@/lib/youtube";
+import { requireAppUser } from "@/lib/auth";
 
 export async function GET() {
-  const { userId } = await auth();
-  if (!userId) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const user = await requireAppUser();
 
-  const state = Buffer.from(JSON.stringify({ userId, t: Date.now() })).toString("base64url");
+  const state = Buffer.from(JSON.stringify({ appUserId: user.id, t: Date.now() })).toString("base64url");
   const authUrl = buildYoutubeAuthUrl(state);
   return Response.redirect(authUrl, 302);
 }

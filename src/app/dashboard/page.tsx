@@ -1,20 +1,27 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ensureUserInDb } from "@/lib/auth";
 import UserProfileChip from "@/components/UserProfileChip";
 
 export default async function DashboardPage() {
-  const { userId } = await auth();
-  if (!userId) {
-    return <main className="p-8">Unauthorized</main>;
-  }
-
   const user = await ensureUserInDb();
   const linkedAccounts = await prisma.socialAccount.findMany({
     where: { userId: user.id },
     select: { id: true, platform: true, oauthStatus: true, channelId: true },
   });
+  const connectedPlatforms = new Set(
+    linkedAccounts
+      .filter((account) => account.oauthStatus === "connected")
+      .map((account) => account.platform),
+  );
+  if (
+    connectedPlatforms.has("youtube") &&
+    connectedPlatforms.has("instagram") &&
+    connectedPlatforms.has("tiktok")
+  ) {
+    redirect("/influencer");
+  }
 
   const providerCards = [
     {
@@ -34,7 +41,7 @@ export default async function DashboardPage() {
     },
   ] as const;
 
-  const connectedCount = linkedAccounts.filter((account) => account.oauthStatus === "connected").length;
+  const connectedCount = connectedPlatforms.size;
   const preferredAccount =
     linkedAccounts.find((account) => account.oauthStatus === "connected" && account.channelId) ??
     linkedAccounts.find((account) => account.oauthStatus === "connected");

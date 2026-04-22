@@ -1,14 +1,12 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { AgencyActions } from "@/components/AgencyActions";
+import { requireAppUser } from "@/lib/auth";
 
 export default async function AgencyPage() {
-  const { userId } = await auth();
-  if (!userId) return <main className="p-8">Unauthorized</main>;
-
+  const appUser = await requireAppUser();
   const user = await prisma.user.findUnique({
-    where: { clerkUserId: userId },
+    where: { id: appUser.id },
     include: {
       campaigns: { include: { matches: true, criteria: true }, orderBy: { createdAt: "desc" } },
       offersSent: { orderBy: { createdAt: "desc" }, take: 10 },

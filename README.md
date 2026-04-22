@@ -5,7 +5,7 @@ YouTube-first platform for influencer data ingestion, campaign matching, and age
 ## Tech Stack
 - Next.js (App Router, TypeScript)
 - Prisma + PostgreSQL
-- Clerk Authentication
+- Supabase Auth
 - YouTube Data API
 - Tailwind CSS
 

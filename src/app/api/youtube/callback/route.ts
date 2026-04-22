@@ -12,11 +12,11 @@ export async function GET(request: Request) {
   }
 
   const statePayload = JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as {
-    userId: string;
+    appUserId: string;
   };
 
   const appUser = await prisma.user.findUnique({
-    where: { clerkUserId: statePayload.userId },
+    where: { id: statePayload.appUserId },
   });
   if (!appUser) {
     return Response.json({ error: "No local app user found" }, { status: 404 });

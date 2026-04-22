@@ -1,13 +1,14 @@
 "use client";
 
-import { useSignIn } from "@clerk/nextjs";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 export default function SignInPage() {
-  const { isLoaded, signIn, setActive } = useSignIn();
+  const supabase = createSupabaseBrowserClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -16,30 +17,23 @@ export default function SignInPage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!isLoaded) return;
-
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const result = await signIn.create({
-        identifier,
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: identifier,
         password,
-        strategy: "password",
       });
 
-      if (result.status === "complete" && result.createdSessionId) {
-        await setActive({ session: result.createdSessionId });
-        router.push("/dashboard");
-        return;
+      if (signInError) {
+        throw signInError;
       }
 
-      setError("Password sign-in is not available for this account.");
+      router.push(searchParams.get("redirect") ?? "/dashboard");
+      router.refresh();
     } catch (err) {
-      const message =
-        err && typeof err === "object" && "errors" in err
-          ? (err as { errors?: Array<{ longMessage?: string }> }).errors?.[0]?.longMessage
-          : undefined;
+      const message = err instanceof Error ? err.message : null;
       setError(message ?? "Unable to sign in. Check email and password.");
     } finally {
       setIsSubmitting(false);
@@ -51,7 +45,7 @@ export default function SignInPage() {
       <section className="w-full rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <h1 className="text-xl font-semibold">Sign in with email and password</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          This form uses password authentication directly and skips email code prompts.
+          This form uses Supabase Auth with direct password sign-in.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -87,7 +81,7 @@ export default function SignInPage() {
 
           <button
             type="submit"
-            disabled={!isLoaded || isSubmitting}
+            disabled={isSubmitting}
             className="w-full rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             {isSubmitting ? "Signing in..." : "Sign in"}

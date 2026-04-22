@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import UserProfileChip from "@/components/UserProfileChip";
+import { requireAppUser } from "@/lib/auth";
 
 type YouTubeAnalyticsReport = {
   kind: "youtubeAnalytics#resultTable";
@@ -45,6 +45,15 @@ type AgeSplitBucket = { group: string; share: number };
 type GeographyRow = { country: string; flag: string; share: number };
 type PlatformKey = "youtube" | "instagram" | "tiktok";
 
+function toFlagEmoji(flagOrCountryCode: string) {
+  const candidate = flagOrCountryCode.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(candidate)) {
+    return flagOrCountryCode;
+  }
+  const codePoints = [...candidate].map((char) => 0x1f1e6 + (char.charCodeAt(0) - 65));
+  return String.fromCodePoint(...codePoints);
+}
+
 function parseAgeSplitJson(input: unknown): AgeSplitBucket[] {
   if (!Array.isArray(input)) return [];
   return input.flatMap((item) => {
@@ -77,12 +86,7 @@ function percentBar(value: number, max = 100) {
 }
 
 export default async function InfluencerPage() {
-  const { userId } = await auth();
-  if (!userId) return <main className="p-8">Unauthorized</main>;
-
-  const user = await prisma.user.findUnique({
-    where: { clerkUserId: userId },
-  });
+  const user = await requireAppUser();
   if (!user || user.role !== "influencer") return <main className="p-8">Influencer role required.</main>;
   const socialAccounts = await prisma.socialAccount.findMany({ where: { userId: user.id } });
   const platformMetrics = await prisma.$queryRaw<
@@ -412,7 +416,7 @@ export default async function InfluencerPage() {
               <div key={row.country}>
                 <div className="mb-1 flex justify-between text-sm">
                   <span>
-                    {row.flag} {row.country}
+                    {toFlagEmoji(row.flag)} {row.country}
                   </span>
                   <span>{row.share}%</span>
                 </div>
