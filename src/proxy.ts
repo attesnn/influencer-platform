@@ -4,7 +4,7 @@ import { refreshSupabaseSession } from "@/lib/supabase/middleware";
 const protectedPrefixes = ["/dashboard", "/influencer", "/agency", "/api"];
 const publicApiPrefixes = ["/api/youtube/callback"];
 
-export default async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const shouldProtect = protectedPrefixes.some((prefix) => path.startsWith(prefix));
   const isPublicApi = publicApiPrefixes.some((prefix) => path.startsWith(prefix));
