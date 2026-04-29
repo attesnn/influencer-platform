@@ -26,20 +26,14 @@ export default function SignInPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    console.log("[sign-in] submit start");
 
     setIsSubmitting(true);
     setError(null);
 
     try {
-      console.log("[sign-in] before signInWithPassword");
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: identifier,
         password,
-      });
-      console.log("[sign-in] after signInWithPassword", {
-        hasError: Boolean(signInError),
-        errorMessage: signInError?.message ?? null,
       });
 
       if (signInError) {
@@ -47,15 +41,12 @@ export default function SignInPage() {
       }
 
       const redirectPath = getSafeRedirectPath(searchParams.get("redirect"));
-      console.log("[sign-in] redirecting", { redirectPath });
       router.push(redirectPath);
       router.refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : null;
-      console.error("[sign-in] submit failed", err);
       setError(message ?? "Unable to sign in. Check email and password.");
     } finally {
-      console.log("[sign-in] submit end");
       setIsSubmitting(false);
     }
   };
