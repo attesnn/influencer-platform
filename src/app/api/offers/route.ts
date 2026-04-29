@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAppUser } from "@/lib/auth";
 import { offerSchema } from "@/lib/validators";
+import { requestHasTrustedOrigin } from "@/lib/security";
 
 const updateOfferSchema = z.object({
   offerId: z.string(),
@@ -25,11 +26,36 @@ export async function POST(request: Request) {
   if (user.role !== "agency") {
     return Response.json({ error: "Only agencies can send offers" }, { status: 403 });
   }
+  if (!requestHasTrustedOrigin(request)) {
+    return Response.json({ error: "Untrusted request origin" }, { status: 403 });
+  }
 
-  const payload = await request.json();
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON payload" }, { status: 400 });
+  }
   const parsed = offerSchema.safeParse(payload);
   if (!parsed.success) {
     return Response.json({ error: "Invalid offer payload" }, { status: 400 });
+  }
+
+  const [campaign, influencer] = await Promise.all([
+    prisma.campaign.findUnique({
+      where: { id: parsed.data.campaignId },
+      select: { id: true, agencyUserId: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: parsed.data.influencerUserId },
+      select: { id: true, role: true },
+    }),
+  ]);
+  if (!campaign || campaign.agencyUserId !== user.id) {
+    return Response.json({ error: "Campaign not found" }, { status: 404 });
+  }
+  if (!influencer || influencer.role !== "influencer") {
+    return Response.json({ error: "Invalid influencer target" }, { status: 400 });
   }
 
   const offer = await prisma.offer.create({
@@ -50,8 +76,16 @@ export async function PATCH(request: Request) {
   if (user.role !== "influencer") {
     return Response.json({ error: "Only influencers can respond" }, { status: 403 });
   }
+  if (!requestHasTrustedOrigin(request)) {
+    return Response.json({ error: "Untrusted request origin" }, { status: 403 });
+  }
 
-  const payload = await request.json();
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON payload" }, { status: 400 });
+  }
   const parsed = updateOfferSchema.safeParse(payload);
   if (!parsed.success) {
     return Response.json({ error: "Invalid offer status payload" }, { status: 400 });

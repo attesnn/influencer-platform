@@ -5,6 +5,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
+function getSafeRedirectPath(candidate: string | null) {
+  if (!candidate) {
+    return "/dashboard";
+  }
+  if (!candidate.startsWith("/") || candidate.startsWith("//")) {
+    return "/dashboard";
+  }
+  return candidate;
+}
+
 export default function SignInPage() {
   const supabase = createSupabaseBrowserClient();
   const router = useRouter();
@@ -30,7 +40,7 @@ export default function SignInPage() {
         throw signInError;
       }
 
-      router.push(searchParams.get("redirect") ?? "/dashboard");
+      router.push(getSafeRedirectPath(searchParams.get("redirect")));
       router.refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : null;

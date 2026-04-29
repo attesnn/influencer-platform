@@ -1,10 +1,11 @@
 import { buildYoutubeAuthUrl } from "@/lib/youtube";
 import { requireAppUser } from "@/lib/auth";
+import { createSignedYoutubeState } from "@/lib/security";
 
 export async function GET() {
   const user = await requireAppUser();
 
-  const state = Buffer.from(JSON.stringify({ appUserId: user.id, t: Date.now() })).toString("base64url");
+  const state = createSignedYoutubeState(user.id);
   const authUrl = buildYoutubeAuthUrl(state);
   return Response.redirect(authUrl, 302);
 }

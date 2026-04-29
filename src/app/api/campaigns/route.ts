@@ -2,6 +2,7 @@ import { campaignSchema } from "@/lib/validators";
 import { prisma } from "@/lib/prisma";
 import { requireAppUser } from "@/lib/auth";
 import { calculateCampaignScore } from "@/lib/scoring";
+import { requestHasTrustedOrigin } from "@/lib/security";
 
 export async function GET() {
   const user = await requireAppUser();
@@ -21,8 +22,16 @@ export async function POST(request: Request) {
   if (user.role !== "agency") {
     return Response.json({ error: "Only agencies can create campaigns" }, { status: 403 });
   }
+  if (!requestHasTrustedOrigin(request)) {
+    return Response.json({ error: "Untrusted request origin" }, { status: 403 });
+  }
 
-  const payload = await request.json();
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON payload" }, { status: 400 });
+  }
   const parsed = campaignSchema.safeParse(payload);
   if (!parsed.success) {
     return Response.json({ error: "Invalid campaign payload" }, { status: 400 });

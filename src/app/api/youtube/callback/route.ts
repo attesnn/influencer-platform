@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { prisma } from "@/lib/prisma";
 import { encryptToken } from "@/lib/crypto";
 import { getYoutubeOAuthClient } from "@/lib/youtube";
+import { verifySignedYoutubeState } from "@/lib/security";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -11,9 +12,10 @@ export async function GET(request: Request) {
     return Response.json({ error: "Invalid callback payload" }, { status: 400 });
   }
 
-  const statePayload = JSON.parse(Buffer.from(state, "base64url").toString("utf8")) as {
-    appUserId: string;
-  };
+  const statePayload = verifySignedYoutubeState(state);
+  if (!statePayload) {
+    return Response.json({ error: "Invalid callback state" }, { status: 400 });
+  }
 
   const appUser = await prisma.user.findUnique({
     where: { id: statePayload.appUserId },
@@ -23,7 +25,12 @@ export async function GET(request: Request) {
   }
 
   const oauth = getYoutubeOAuthClient();
-  const { tokens } = await oauth.getToken(code);
+  let tokens;
+  try {
+    ({ tokens } = await oauth.getToken(code));
+  } catch {
+    return Response.json({ error: "Failed to exchange authorization code" }, { status: 400 });
+  }
   oauth.setCredentials(tokens);
   const youtube = google.youtube({ version: "v3", auth: oauth });
   const channelsResponse = await youtube.channels.list({
