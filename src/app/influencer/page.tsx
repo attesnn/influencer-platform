@@ -185,34 +185,6 @@ export default async function InfluencerPage() {
   const totalReach = reachRows.reduce((acc, row) => acc + row.organic + row.paid, 0);
   const avgEngagement = reachRows.reduce((acc, row) => acc + row.engagementRate, 0) / reachRows.length;
   const avgRetention = reachRows.reduce((acc, row) => acc + row.retentionRate, 0) / reachRows.length;
-  const topPlatformByFollowers = reachRows.reduce((best, row) =>
-    row.followers > best.followers ? row : best,
-  );
-  const topPlatformByEngagement = reachRows.reduce((best, row) =>
-    row.engagementRate > best.engagementRate ? row : best,
-  );
-  const topPlatformByRetention = reachRows.reduce((best, row) =>
-    row.retentionRate > best.retentionRate ? row : best,
-  );
-  const topAgeBucket = ageSplit.reduce<AgeSplitBucket | null>(
-    (best, bucket) => (!best || bucket.share > best.share ? bucket : best),
-    null,
-  );
-  const topGeographyRow = geography.reduce<GeographyRow | null>(
-    (best, row) => (!best || row.share > best.share ? row : best),
-    null,
-  );
-  const somexHighlights = [
-    `${platformLabel[topPlatformByFollowers.platform]} leads audience size with ${topPlatformByFollowers.followers.toLocaleString()} followers.`,
-    `${platformLabel[topPlatformByEngagement.platform]} is the strongest engagement driver at ${topPlatformByEngagement.engagementRate.toFixed(1)}%.`,
-    `${platformLabel[topPlatformByRetention.platform]} shows the healthiest retention at ${topPlatformByRetention.retentionRate.toFixed(1)}%.`,
-    topAgeBucket
-      ? `Primary age cohort: ${topAgeBucket.group} (${topAgeBucket.share.toFixed(1)}% of audience).`
-      : "Primary age cohort will be generated when audience age data is available.",
-    topGeographyRow
-      ? `Top geography signal: ${toFlagEmoji(topGeographyRow.flag)} ${topGeographyRow.country} (${topGeographyRow.share.toFixed(1)}%).`
-      : "Top geography signal will be generated when location data is available.",
-  ];
 
   const youtubePayload = latestByPlatform.get("youtube")?.payloadJson as YouTubeAnalyticsReport | undefined;
   const instagramPayload = latestByPlatform.get("instagram")?.payloadJson as InstagramInsightsResponse | undefined;
@@ -220,31 +192,6 @@ export default async function InfluencerPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
-      <section className="rounded-xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-violet-50 p-5 dark:border-sky-900/70 dark:from-sky-950/40 dark:via-zinc-950 dark:to-violet-950/30">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
-              Somex summary card
-            </p>
-            <h2 className="mt-1 text-xl font-semibold">Top picks based on your profile data</h2>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-              AI-generated narrative will be inserted here later. This preview uses live profile metrics to
-              surface the strongest highlights.
-            </p>
-          </div>
-        </div>
-        <div className="mt-4 grid gap-2 md:grid-cols-2">
-          {somexHighlights.map((highlight) => (
-            <article
-              key={highlight}
-              className="rounded-lg border border-sky-100 bg-white/80 p-3 text-sm text-zinc-700 shadow-sm dark:border-sky-900/70 dark:bg-zinc-900/50 dark:text-zinc-200"
-            >
-              {highlight}
-            </article>
-          ))}
-        </div>
-      </section>
-
       {missingConnections > 0 ? (
         <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/30">
           <div className="flex flex-wrap items-center justify-between gap-2">
