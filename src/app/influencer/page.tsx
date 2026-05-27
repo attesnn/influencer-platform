@@ -2,44 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import UserProfileChip from "@/components/UserProfileChip";
 import { requireAppUser } from "@/lib/auth";
-
-type YouTubeAnalyticsReport = {
-  kind: "youtubeAnalytics#resultTable";
-  columnHeaders: Array<{
-    name: string;
-    columnType: "DIMENSION" | "METRIC";
-    dataType: "STRING" | "INTEGER" | "FLOAT";
-  }>;
-  rows: Array<[string, number, number, number, number, number, number, number]>;
-};
-
-type InstagramInsightsResponse = {
-  data: Array<{
-    name: string;
-    period: "day";
-    values: Array<{ value: number; end_time: string }>;
-    title: string;
-    description: string;
-    id: string;
-  }>;
-};
-
-type TikTokAnalyticsResponse = {
-  data: {
-    list: Array<{
-      stat_time_day: string;
-      video_views: number;
-      profile_views: number;
-      likes: number;
-      comments: number;
-      shares: number;
-      followers_count: number;
-      average_watch_time: number;
-    }>;
-    cursor: number;
-    has_more: boolean;
-  };
-};
+import { decryptToken } from "@/lib/crypto";
 
 type AgeSplitBucket = { group: string; share: number };
 type GeographyRow = { country: string; flag: string; share: number };
@@ -85,10 +48,52 @@ function percentBar(value: number, max = 100) {
   return `${width}%`;
 }
 
+function hasValidYoutubeToken(tokenRef: string | null | undefined) {
+  if (!tokenRef) return false;
+  try {
+    const parsed = JSON.parse(decryptToken(tokenRef)) as {
+      access_token?: string;
+      refresh_token?: string;
+    };
+    return Boolean(parsed.access_token || parsed.refresh_token);
+  } catch {
+    return false;
+  }
+}
+
+function hasValidMetaToken(tokenRef: string | null | undefined) {
+  if (!tokenRef) return false;
+  try {
+    const parsed = JSON.parse(decryptToken(tokenRef)) as {
+      access_token?: string;
+    };
+    return Boolean(parsed.access_token);
+  } catch {
+    return false;
+  }
+}
+
+function hasValidTiktokToken(tokenRef: string | null | undefined) {
+  if (!tokenRef) return false;
+  try {
+    const parsed = JSON.parse(decryptToken(tokenRef)) as {
+      access_token?: string;
+      open_id?: string;
+    };
+    return Boolean(parsed.access_token && parsed.open_id);
+  } catch {
+    return false;
+  }
+}
+
 export default async function InfluencerPage() {
   const user = await requireAppUser();
   if (!user || user.role !== "influencer") return <main className="p-8">Influencer role required.</main>;
   const socialAccounts = await prisma.socialAccount.findMany({ where: { userId: user.id } });
+  const latestYoutubeMetric = await prisma.influencerMetric.findFirst({
+    where: { userId: user.id },
+    orderBy: { snapshotDate: "desc" },
+  });
   const platformMetrics = await prisma.$queryRaw<
     Array<{
       platform: PlatformKey;
@@ -133,9 +138,29 @@ export default async function InfluencerPage() {
   const platformConnectionStatus = platforms.map((platform) => ({
     key: platform,
     label: platformLabel[platform],
-    connected: socialAccounts.some(
-      (account) => String(account.platform) === platform && account.oauthStatus === "connected",
-    ),
+    connected:
+      platform === "youtube"
+        ? socialAccounts.some(
+            (account) =>
+              String(account.platform) === platform &&
+              account.oauthStatus === "connected" &&
+              hasValidYoutubeToken(account.tokenRef),
+          )
+        : platform === "instagram"
+          ? socialAccounts.some(
+              (account) =>
+                String(account.platform) === platform &&
+                account.oauthStatus === "connected" &&
+                hasValidMetaToken(account.tokenRef),
+            )
+          : platform === "tiktok"
+            ? socialAccounts.some(
+                (account) =>
+                  String(account.platform) === platform &&
+                  account.oauthStatus === "connected" &&
+                  hasValidTiktokToken(account.tokenRef),
+              )
+            : false,
   }));
   const missingConnections = platformConnectionStatus.filter((item) => !item.connected).length;
   const preferredAccount =
@@ -147,13 +172,18 @@ export default async function InfluencerPage() {
 
   const reachRows = platforms.map((platform) => {
     const metric = latestByPlatform.get(platform);
+    const youtubeFollowers = latestYoutubeMetric?.subscribers ?? metric?.followers ?? 0;
+    const youtubeViews = latestYoutubeMetric?.views30d ?? metric?.reachOrganic ?? 0;
+    const youtubeRetention = latestYoutubeMetric?.retentionProxy
+      ? Math.max(0, Math.min(100, latestYoutubeMetric.retentionProxy * 100))
+      : metric?.retentionRate ?? 0;
     return {
       platform,
-      organic: metric?.reachOrganic ?? 0,
-      paid: metric?.reachPaid ?? 0,
+      organic: platform === "youtube" ? youtubeViews : metric?.reachOrganic ?? 0,
+      paid: platform === "youtube" ? 0 : metric?.reachPaid ?? 0,
       engagementRate: metric?.engagementRate ?? 0,
-      retentionRate: metric?.retentionRate ?? 0,
-      followers: metric?.followers ?? 0,
+      retentionRate: platform === "youtube" ? youtubeRetention : metric?.retentionRate ?? 0,
+      followers: platform === "youtube" ? youtubeFollowers : metric?.followers ?? 0,
     };
   });
   const qualityRows = reachRows.map((row) => {
@@ -185,15 +215,46 @@ export default async function InfluencerPage() {
   const totalReach = reachRows.reduce((acc, row) => acc + row.organic + row.paid, 0);
   const avgEngagement = reachRows.reduce((acc, row) => acc + row.engagementRate, 0) / reachRows.length;
   const avgRetention = reachRows.reduce((acc, row) => acc + row.retentionRate, 0) / reachRows.length;
-
-  const youtubePayload = latestByPlatform.get("youtube")?.payloadJson as YouTubeAnalyticsReport | undefined;
-  const instagramPayload = latestByPlatform.get("instagram")?.payloadJson as InstagramInsightsResponse | undefined;
-  const tiktokPayload = latestByPlatform.get("tiktok")?.payloadJson as TikTokAnalyticsResponse | undefined;
+  const topPlatformByFollowers = reachRows.reduce((best, row) =>
+    row.followers > best.followers ? row : best,
+  );
+  const topPlatformByEngagement = reachRows.reduce((best, row) =>
+    row.engagementRate > best.engagementRate ? row : best,
+  );
+  const topAgeBucket = ageSplit.reduce<AgeSplitBucket | null>(
+    (best, bucket) => (!best || bucket.share > best.share ? bucket : best),
+    null,
+  );
+  const topGeographyRow = geography.reduce<GeographyRow | null>(
+    (best, row) => (!best || row.share > best.share ? row : best),
+    null,
+  );
+  const linkedinReadyText = [
+    "Creator performance snapshot",
+    "",
+    `- Total audience: ${totalFollowers.toLocaleString()}`,
+    `- Total reach: ${totalReach.toLocaleString()}`,
+    `- Strongest audience platform: ${
+      platformLabel[topPlatformByFollowers.platform]
+    } (${topPlatformByFollowers.followers.toLocaleString()} followers)`,
+    `- Best engagement platform: ${
+      platformLabel[topPlatformByEngagement.platform]
+    } (${topPlatformByEngagement.engagementRate.toFixed(1)}%)`,
+    `- Average retention across channels: ${avgRetention.toFixed(1)}%`,
+    topAgeBucket
+      ? `- Top age segment: ${topAgeBucket.group} (${topAgeBucket.share.toFixed(1)}%)`
+      : "- Top age segment: not available yet",
+    topGeographyRow
+      ? `- Top geography: ${topGeographyRow.country} (${topGeographyRow.share.toFixed(1)}%)`
+      : "- Top geography: not available yet",
+    "",
+    "#creator #influencermarketing #socialmedia",
+  ].join("\n");
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-5 sm:gap-6 sm:px-6 sm:py-8">
       {missingConnections > 0 ? (
-        <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-950/30">
+      <section className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-700 dark:bg-zinc-900/40">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
               Account connection status
@@ -202,14 +263,14 @@ export default async function InfluencerPage() {
               {missingConnections} platform{missingConnections > 1 ? "s" : ""} still missing
             </p>
           </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-3">
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {platformConnectionStatus.map((item) => (
               <article
                 key={item.key}
-                className={`rounded-lg border px-3 py-2 ${
+                className={`rounded-xl border px-3 py-2 ${
                   item.connected
-                    ? "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30"
-                    : "border-rose-300 bg-rose-50 dark:border-rose-700 dark:bg-rose-950/30"
+                    ? "border-blue-200 bg-blue-50/80 dark:border-blue-700 dark:bg-blue-950/30"
+                    : "border-zinc-200 bg-zinc-50/80 dark:border-zinc-700 dark:bg-zinc-900/40"
                 }`}
               >
                 <p
@@ -236,10 +297,10 @@ export default async function InfluencerPage() {
         </section>
       ) : null}
 
-      <section className="space-y-3">
+      <section className="space-y-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold">Influencer analytics hub</h1>
+            <h1 className="text-2xl font-bold sm:text-3xl">Influencer analytics hub</h1>
             <p className="text-zinc-600 dark:text-zinc-300">
               Unified dummy analytics preview across YouTube, Instagram, and TikTok using
               realistic API response shapes.
@@ -249,21 +310,76 @@ export default async function InfluencerPage() {
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-4">
+      <section className="rounded-2xl border border-violet-200 bg-violet-50/70 p-4 sm:p-5 dark:border-violet-900/50 dark:bg-violet-950/20">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Somex summary (LinkedIn-ready)</h2>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">AI text will replace this draft later</span>
+        </div>
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+          Copy the text below directly to LinkedIn, then adjust tone as needed.
+        </p>
+        <pre className="mt-3 whitespace-pre-wrap rounded-xl border border-violet-200 bg-white/90 p-4 text-sm leading-6 dark:border-violet-900/50 dark:bg-zinc-950">
+          {linkedinReadyText}
+        </pre>
+      </section>
+
+      <section className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 sm:p-5 dark:border-blue-900/60 dark:bg-blue-950/20">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Live YouTube snapshot</h2>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            {latestYoutubeMetric ? `Updated ${latestYoutubeMetric.snapshotDate.toLocaleString()}` : "No sync yet"}
+          </span>
+        </div>
+        {latestYoutubeMetric ? (
+          <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <article className="rounded-xl border border-blue-200 bg-white/90 p-3 dark:border-blue-900/60 dark:bg-zinc-950">
+              <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Subscribers</p>
+              <p className="mt-1 text-xl font-semibold">{latestYoutubeMetric.subscribers.toLocaleString()}</p>
+            </article>
+            <article className="rounded-xl border border-blue-200 bg-white/90 p-3 dark:border-blue-900/60 dark:bg-zinc-950">
+              <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Channel Views</p>
+              <p className="mt-1 text-xl font-semibold">{latestYoutubeMetric.views30d.toLocaleString()}</p>
+            </article>
+            <article className="rounded-xl border border-blue-200 bg-white/90 p-3 dark:border-blue-900/60 dark:bg-zinc-950">
+              <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Retention Proxy</p>
+              <p className="mt-1 text-xl font-semibold">
+                {((latestYoutubeMetric.retentionProxy ?? 0) * 100).toFixed(1)}%
+              </p>
+            </article>
+            <article className="rounded-xl border border-blue-200 bg-white/90 p-3 dark:border-blue-900/60 dark:bg-zinc-950">
+              <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Avg View Duration</p>
+              <p className="mt-1 text-xl font-semibold">
+                {latestYoutubeMetric.avgViewDuration
+                  ? `${latestYoutubeMetric.avgViewDuration.toFixed(1)} sec`
+                  : "Not available"}
+              </p>
+            </article>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+            Connect YouTube and run a sync from dashboard to populate live channel metrics here.
+          </p>
+        )}
+      </section>
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           { label: "Total Reach", value: totalReach.toLocaleString() },
           { label: "Avg Engagement", value: `${avgEngagement.toFixed(1)}%` },
           { label: "Avg Retention", value: `${avgRetention.toFixed(1)}%` },
           { label: "Total Audience", value: totalFollowers.toLocaleString() },
         ].map((item) => (
-          <article key={item.label} className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+          <article
+            key={item.label}
+            className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 dark:border-zinc-700 dark:bg-zinc-900/40"
+          >
             <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{item.label}</p>
             <p className="mt-2 text-2xl font-semibold">{item.value}</p>
           </article>
         ))}
       </section>
 
-      <section className="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
+      <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 sm:p-5 dark:border-blue-900/50 dark:bg-blue-950/20">
         <h2 className="text-lg font-semibold">Reach split (organic vs paid)</h2>
         <div className="mt-4 space-y-4">
           {reachRows.map((row) => {
@@ -303,7 +419,7 @@ export default async function InfluencerPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <article className="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
+        <article className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4 sm:p-5 dark:border-violet-900/50 dark:bg-violet-950/20">
           <h2 className="text-lg font-semibold">Engagement quality</h2>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
             Quality score blends engagement rate with organic reach share.
@@ -329,7 +445,7 @@ export default async function InfluencerPage() {
           </div>
         </article>
 
-        <article className="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
+        <article className="rounded-2xl border border-blue-200 bg-blue-50/60 p-4 sm:p-5 dark:border-blue-900/50 dark:bg-blue-950/20">
           <h2 className="text-lg font-semibold">Retention by platform</h2>
           <div className="mt-4 space-y-3">
             {reachRows.map((row) => (
@@ -351,7 +467,7 @@ export default async function InfluencerPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <article className="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
+        <article className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 sm:p-5 dark:border-zinc-700 dark:bg-zinc-900/40">
           <h2 className="text-lg font-semibold">Audience</h2>
           <div className="mt-4 flex flex-col items-center gap-4 md:flex-row md:items-start">
             <div
@@ -409,7 +525,7 @@ export default async function InfluencerPage() {
           </div>
         </article>
 
-        <article className="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
+        <article className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4 sm:p-5 dark:border-violet-900/50 dark:bg-violet-950/20">
           <h2 className="text-lg font-semibold">Geography</h2>
           <div className="mt-3 space-y-3">
             {geography.map((row) => (
@@ -433,34 +549,6 @@ export default async function InfluencerPage() {
             ) : null}
           </div>
         </article>
-      </section>
-
-      <section className="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
-        <h2 className="text-lg font-semibold">Raw API-shaped dummy payloads</h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
-          These payloads follow typical response shapes from each platform API for
-          realistic integration scaffolding.
-        </p>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <article className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
-            <h3 className="text-sm font-semibold">YouTube Analytics</h3>
-            <pre className="mt-2 overflow-x-auto text-xs text-zinc-700 dark:text-zinc-300">
-              {JSON.stringify(youtubePayload ?? {}, null, 2)}
-            </pre>
-          </article>
-          <article className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
-            <h3 className="text-sm font-semibold">Instagram Insights</h3>
-            <pre className="mt-2 overflow-x-auto text-xs text-zinc-700 dark:text-zinc-300">
-              {JSON.stringify(instagramPayload ?? {}, null, 2)}
-            </pre>
-          </article>
-          <article className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
-            <h3 className="text-sm font-semibold">TikTok Analytics</h3>
-            <pre className="mt-2 overflow-x-auto text-xs text-zinc-700 dark:text-zinc-300">
-              {JSON.stringify(tiktokPayload ?? {}, null, 2)}
-            </pre>
-          </article>
-        </div>
       </section>
 
       <Link className="text-sm underline" href="/dashboard">

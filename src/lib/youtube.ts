@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { CodeChallengeMethod } from "google-auth-library";
 
 export function getYoutubeOAuthClient() {
   const clientId = process.env.YOUTUBE_CLIENT_ID;
@@ -13,6 +14,10 @@ export function getYoutubeOAuthClient() {
 }
 
 export function buildYoutubeAuthUrl(state: string) {
+  return buildYoutubeAuthUrlWithPkce(state);
+}
+
+export function buildYoutubeAuthUrlWithPkce(state: string, codeChallenge?: string) {
   const client = getYoutubeOAuthClient();
   return client.generateAuthUrl({
     access_type: "offline",
@@ -22,5 +27,12 @@ export function buildYoutubeAuthUrl(state: string) {
     ],
     prompt: "consent",
     state,
+    include_granted_scopes: true,
+    ...(codeChallenge
+      ? {
+          code_challenge_method: CodeChallengeMethod.S256,
+          code_challenge: codeChallenge,
+        }
+      : {}),
   });
 }

@@ -1,27 +1,54 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ensureUserInDb } from "@/lib/auth";
 import UserProfileChip from "@/components/UserProfileChip";
+import { decryptToken } from "@/lib/crypto";
+
+function hasValidYoutubeToken(tokenRef: string | null | undefined) {
+  if (!tokenRef) return false;
+  try {
+    const parsed = JSON.parse(decryptToken(tokenRef)) as {
+      access_token?: string;
+      refresh_token?: string;
+    };
+    return Boolean(parsed.access_token || parsed.refresh_token);
+  } catch {
+    return false;
+  }
+}
+
+function hasValidMetaToken(tokenRef: string | null | undefined) {
+  if (!tokenRef) return false;
+  try {
+    const parsed = JSON.parse(decryptToken(tokenRef)) as {
+      access_token?: string;
+    };
+    return Boolean(parsed.access_token);
+  } catch {
+    return false;
+  }
+}
+
+function hasValidTiktokToken(tokenRef: string | null | undefined) {
+  if (!tokenRef) return false;
+  try {
+    const parsed = JSON.parse(decryptToken(tokenRef)) as {
+      access_token?: string;
+      open_id?: string;
+    };
+    return Boolean(parsed.access_token && parsed.open_id);
+  } catch {
+    return false;
+  }
+}
 
 export default async function DashboardPage() {
   const user = await ensureUserInDb();
   const linkedAccounts = await prisma.socialAccount.findMany({
     where: { userId: user.id },
-    select: { id: true, platform: true, oauthStatus: true, channelId: true },
+    select: { id: true, platform: true, oauthStatus: true, channelId: true, tokenRef: true },
   });
-  const connectedPlatforms = new Set(
-    linkedAccounts
-      .filter((account) => account.oauthStatus === "connected")
-      .map((account) => account.platform),
-  );
-  if (
-    connectedPlatforms.has("youtube") &&
-    connectedPlatforms.has("instagram") &&
-    connectedPlatforms.has("tiktok")
-  ) {
-    redirect("/influencer");
-  }
+  
 
   const providerCards = [
     {
@@ -32,7 +59,7 @@ export default async function DashboardPage() {
     {
       title: "Meta",
       description: "Add Instagram/Facebook performance signals for a fuller dataset.",
-      platform: "meta",
+      platform: "instagram",
     },
     {
       title: "TikTok",
@@ -41,10 +68,29 @@ export default async function DashboardPage() {
     },
   ] as const;
 
-  const connectedCount = connectedPlatforms.size;
+  const isPlatformConnected = (platform: (typeof providerCards)[number]["platform"]) => {
+    if (platform === "youtube") {
+      const youtubeAccount = linkedAccounts.find((account) => account.platform === "youtube");
+      return Boolean(
+        youtubeAccount?.oauthStatus === "connected" && hasValidYoutubeToken(youtubeAccount.tokenRef),
+      );
+    }
+    if (platform === "instagram") {
+      const metaAccount = linkedAccounts.find((account) => account.platform === "instagram");
+      return Boolean(metaAccount?.oauthStatus === "connected" && hasValidMetaToken(metaAccount.tokenRef));
+    }
+    if (platform === "tiktok") {
+      const tiktokAccount = linkedAccounts.find((account) => account.platform === "tiktok");
+      return Boolean(tiktokAccount?.oauthStatus === "connected" && hasValidTiktokToken(tiktokAccount.tokenRef));
+    }
+    return false;
+  };
+  const connectedCount = providerCards.filter((provider) => isPlatformConnected(provider.platform)).length;
   const preferredAccount =
-    linkedAccounts.find((account) => account.oauthStatus === "connected" && account.channelId) ??
-    linkedAccounts.find((account) => account.oauthStatus === "connected");
+    linkedAccounts.find(
+      (account) => account.platform === "youtube" && account.oauthStatus === "connected" && account.channelId,
+    ) ??
+    linkedAccounts.find((account) => account.platform === "youtube" && account.oauthStatus === "connected");
   const socialDisplayName =
     preferredAccount?.channelId ??
     (user.email.includes("@") ? `@${user.email.split("@")[0]}` : user.email);
@@ -75,8 +121,7 @@ export default async function DashboardPage() {
 
       <section className="grid gap-3">
         {providerCards.map((provider) => {
-          const linked = linkedAccounts.find((account) => account.platform === provider.platform);
-          const isConnected = linked?.oauthStatus === "connected";
+          const isConnected = isPlatformConnected(provider.platform);
 
           return (
             <article
@@ -92,14 +137,80 @@ export default async function DashboardPage() {
                   {isConnected ? "Connected" : "Not connected"}
                 </span>
               </div>
-              <button
-                type="button"
-                disabled
-                className="mt-4 rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-sm text-zinc-500 disabled:cursor-not-allowed dark:border-zinc-700 dark:text-zinc-400"
-                aria-label={`Connect ${provider.title} (coming soon)`}
-              >
-                Connect {provider.title} (coming soon)
-              </button>
+              {provider.platform !== "youtube" ? (
+                provider.platform === "instagram" ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {isConnected ? (
+                      <form action="/api/meta/disconnect" method="post">
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-rose-300 px-3 py-2 text-sm text-rose-700 dark:border-rose-700 dark:text-rose-300"
+                        >
+                          Disconnect Meta
+                        </button>
+                      </form>
+                    ) : (
+                      <a
+                        href="/api/meta/connect"
+                        className="rounded-lg bg-black px-3 py-2 text-sm text-white dark:bg-zinc-200 dark:text-black"
+                      >
+                        Connect Meta
+                      </a>
+                    )}
+                  </div>
+                ) : provider.platform === "tiktok" ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {isConnected ? (
+                      <form action="/api/tiktok/disconnect" method="post">
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-rose-300 px-3 py-2 text-sm text-rose-700 dark:border-rose-700 dark:text-rose-300"
+                        >
+                          Disconnect TikTok
+                        </button>
+                      </form>
+                    ) : (
+                      <a
+                        href="/api/tiktok/connect"
+                        className="rounded-lg bg-black px-3 py-2 text-sm text-white dark:bg-zinc-200 dark:text-black"
+                      >
+                        Connect TikTok
+                      </a>
+                    )}
+                  </div>
+                ) : null
+              ) : null}
+              {provider.platform === "youtube" ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {isConnected ? (
+                    <>
+                      <form action="/api/youtube/ingest" method="post">
+                        <button
+                          type="submit"
+                          className="rounded-lg bg-black px-3 py-2 text-sm text-white dark:bg-zinc-200 dark:text-black"
+                        >
+                          Sync latest from YouTube
+                        </button>
+                      </form>
+                      <form action="/api/youtube/disconnect" method="post">
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-rose-300 px-3 py-2 text-sm text-rose-700 dark:border-rose-700 dark:text-rose-300"
+                        >
+                          Disconnect Google / YouTube
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <a
+                      href="/api/youtube/connect"
+                      className="rounded-lg bg-black px-3 py-2 text-sm text-white dark:bg-zinc-200 dark:text-black"
+                    >
+                      Connect Google / YouTube
+                    </a>
+                  )}
+                </div>
+              ) : null}
             </article>
           );
         })}
